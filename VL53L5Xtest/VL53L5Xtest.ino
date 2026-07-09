@@ -1,6 +1,9 @@
 #include <Wire.h>
 #include <SparkFun_VL53L5CX_Library.h>
 
+// VL53L5CX INT pin (LPn is tied to 3.3V externally)
+#define VL53L5CX_INT_PIN 5
+
 SparkFun_VL53L5CX myImager;
 VL53L5CX_ResultsData measurementData;
 
@@ -15,6 +18,9 @@ void setup()
 
   Wire.begin(21, 22);
 
+  // INT from the VL53L5CX is open-drain / active-low.
+  pinMode(VL53L5CX_INT_PIN, INPUT_PULLUP);
+
   Serial.println("Starting VL53L5CX...");
 
   if (!myImager.begin())
@@ -26,6 +32,9 @@ void setup()
   Serial.println("VL53L5CX FOUND");
 
   myImager.setResolution(8 * 8);
+
+  // 15 Hz is a good trade-off between update rate and CPU on the ESP32.
+  myImager.setRangingFrequency(15);
 
   myImager.startRanging();
 
