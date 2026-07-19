@@ -254,8 +254,8 @@ Mount the ESP32 on a breadboard and power it using a separate power bank.
 | GND         | GND               |
 | SDA         | GPIO 21           |
 | SCL         | GPIO 22           |
-| INT         | GPIO 4 (Optional) |
-| LPn         | GPIO 5 (Optional) |
+| INT         | GPIO 5 (Optional) |
+| LPn         | 3.3V (Optional) |
 
 Mount the sensor facing downward toward the crowd.
 
@@ -327,8 +327,8 @@ Connect the ESP32 to a separate power bank.
 | ----------- | --------- | ------------------ |
 | VL53L5X SDA | GPIO 21   | I²C Data           |
 | VL53L5X SCL | GPIO 22   | I²C Clock          |
-| VL53L5X INT | GPIO 4    | Optional interrupt |
-| VL53L5X LPn | GPIO 5    | Optional reset     |
+| VL53L5X INT | GPIO 5    | Optional interrupt |
+| VL53L5X LPn | 3.3V      | Optional reset     |
 | BME280 SDA  | GPIO 21   | Shared I²C Data    |
 | BME280 SCL  | GPIO 22   | Shared I²C Clock   |
 | INMP441 WS  | GPIO 15   | I²S Word Select    |
