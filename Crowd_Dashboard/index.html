@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Crowd Risk Monitor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<header class="header">
+  <div class="header__id">
+    <span class="header__eyebrow">Ground Node · ESP-NOW / MQTT</span>
+    <h1 class="header__title">Crowd Risk Monitor</h1>
+  </div>
+
+  <div class="header__status">
+    <button class="conn" id="connBtn" type="button" aria-expanded="false" aria-controls="settingsPanel">
+      <span class="conn__dot" id="connDot" data-state="disconnected" aria-hidden="true"></span>
+      <span class="conn__label" id="connLabel">Disconnected</span>
+    </button>
+    <time class="header__clock" id="clock">--:--:--</time>
+  </div>
+</header>
+
+<!-- Broker connection settings, collapsed by default -->
+<section class="settings" id="settingsPanel" hidden>
+  <form class="settings__form" id="settingsForm">
+    <div class="settings__grid">
+      <label class="field">
+        <span>Broker host</span>
+        <input type="text" id="cfgHost" placeholder="192.168.1.50" required />
+      </label>
+      <label class="field">
+        <span>WS port</span>
+        <input type="number" id="cfgPort" placeholder="9001" required />
+      </label>
+      <label class="field">
+        <span>Path</span>
+        <input type="text" id="cfgPath" placeholder="/mqtt" />
+      </label>
+      <label class="field field--check">
+        <input type="checkbox" id="cfgTls" />
+        <span>Use TLS (wss)</span>
+      </label>
+      <label class="field">
+        <span>Data topic</span>
+        <input type="text" id="cfgDataTopic" placeholder="crowd/risk/data" />
+      </label>
+      <label class="field">
+        <span>Status topic</span>
+        <input type="text" id="cfgStatusTopic" placeholder="crowd/risk/status" />
+      </label>
+      <label class="field">
+        <span>Username</span>
+        <input type="text" id="cfgUser" placeholder="optional" />
+      </label>
+      <label class="field">
+        <span>Password</span>
+        <input type="password" id="cfgPass" placeholder="optional" />
+      </label>
+    </div>
+    <p class="settings__hint">
+      Your broker needs a WebSocket listener (Mosquitto: a <code>listener 9001</code> +
+      <code>protocol websockets</code> block). This matches the topics the Ground Node
+      publishes to in <code>publishToMQTT()</code>.
+    </p>
+    <div class="settings__actions">
+      <button type="submit" class="btn btn--primary">Connect</button>
+      <button type="button" class="btn" id="disconnectBtn">Disconnect</button>
+    </div>
+  </form>
+</section>
+
+<main class="dashboard">
+
+  <!-- Overall fused risk, mirrors the Ground Node's LED / OvrRisk -->
+  <section class="banner" id="banner" data-risk="unknown">
+    <span class="banner__lamp" aria-hidden="true"></span>
+    <div class="banner__text">
+      <span class="banner__label">Overall Risk</span>
+      <span class="banner__value" id="bannerValue">WAITING FOR DATA</span>
+    </div>
+    <div class="banner__packet">
+      <span id="packetAge">no packets yet</span>
+    </div>
+  </section>
+
+  <div class="panel-grid">
+
+    <!-- Occupancy: IR entry/exit counters -->
+    <article class="panel" data-panel="occupancy" data-risk="unknown">
+      <header class="panel__head">
+        <h2>Occupancy</h2>
+        <span class="lamp" aria-hidden="true"></span>
+      </header>
+
+      <div class="flapboard" id="flapIn" aria-label="People entered">
+        <div class="flapboard__digits"></div>
+        <span class="flapboard__label">IN</span>
+      </div>
+      <div class="flapboard" id="flapOut" aria-label="People exited">
+        <div class="flapboard__digits"></div>
+        <span class="flapboard__label">OUT</span>
+      </div>
+      <div class="flapboard flapboard--main" id="flapPeople" aria-label="Current occupancy">
+        <div class="flapboard__digits"></div>
+        <span class="flapboard__label">OCCUPIED</span>
+      </div>
+
+      <footer class="panel__foot">
+        <span class="panel__risk-label">Occupied Risk</span>
+        <span class="panel__risk-value" id="occupiedRiskValue">–</span>
+      </footer>
+    </article>
+
+    <!-- Density: VL53L5CX 8x8 zone grid -->
+    <article class="panel" data-panel="density" data-risk="unknown">
+      <header class="panel__head">
+        <h2>Density</h2>
+        <span class="lamp" aria-hidden="true"></span>
+      </header>
+
+      <div class="readout">
+        <span class="readout__value" id="densityValue">–</span>
+        <span class="readout__unit">%</span>
+      </div>
+      <div class="zonegrid" id="zoneGrid" aria-hidden="true"></div>
+      <p class="readout__sub"><span id="zoneCount">0</span> / 64 zones occupied</p>
+
+      <footer class="panel__foot">
+        <span class="panel__risk-label">Density Risk</span>
+        <span class="panel__risk-value" id="densityRiskValue">–</span>
+      </footer>
+    </article>
+
+    <!-- Environment: BME280 temperature / humidity -->
+    <article class="panel" data-panel="environment" data-risk="unknown">
+      <header class="panel__head">
+        <h2>Environment</h2>
+        <span class="lamp" aria-hidden="true"></span>
+      </header>
+
+      <div class="readout readout--split">
+        <div>
+          <span class="readout__value" id="tempValue">–</span>
+          <span class="readout__unit">°C</span>
+        </div>
+        <div>
+          <span class="readout__value readout__value--sub" id="humidityValue">–</span>
+          <span class="readout__unit">%RH</span>
+        </div>
+      </div>
+
+      <footer class="panel__foot">
+        <span class="panel__risk-label">Env Risk</span>
+        <span class="panel__risk-value" id="envRiskValue">–</span>
+      </footer>
+    </article>
+
+    <!-- Noise: INMP441 microphone -->
+    <article class="panel" data-panel="noise" data-risk="unknown">
+      <header class="panel__head">
+        <h2>Noise</h2>
+        <span class="lamp" aria-hidden="true"></span>
+      </header>
+
+      <div class="readout">
+        <span class="readout__value" id="noiseValue">–</span>
+        <span class="readout__unit">%</span>
+      </div>
+      <div class="meter" role="img" aria-label="Noise level meter">
+        <div class="meter__fill" id="noiseMeterFill"></div>
+      </div>
+      <p class="readout__sub"><span id="noiseDbValue">–</span> dB SPL</p>
+
+      <footer class="panel__foot">
+        <span class="panel__risk-label">Noise Risk</span>
+        <span class="panel__risk-value" id="noiseRiskValue">–</span>
+      </footer>
+    </article>
+
+    <!-- Node health: Ceiling Node link status -->
+    <article class="panel panel--node" data-panel="node" data-risk="unknown">
+      <header class="panel__head">
+        <h2>Node Health</h2>
+        <span class="lamp" aria-hidden="true"></span>
+      </header>
+
+      <div class="nodehealth">
+        <div class="nodehealth__row">
+          <span class="nodehealth__dot" id="ceilingDot" aria-hidden="true"></span>
+          <span id="ceilingStatus">OFFLINE</span>
+        </div>
+        <div class="nodehealth__row nodehealth__row--mono">
+          <span>Packet #</span>
+          <span id="packetNumber">–</span>
+        </div>
+      </div>
+
+      <footer class="panel__foot">
+        <span class="panel__risk-label">Overall Risk</span>
+        <span class="panel__risk-value" id="nodeOverallValue">–</span>
+      </footer>
+    </article>
+
+  </div>
+
+  <!-- Terminal-style scrolling feed of every MQTT message received -->
+  <section class="log" aria-live="polite">
+    <header class="log__head">
+      <h2>Event Log</h2>
+      <button class="btn btn--ghost" id="clearLogBtn" type="button">Clear</button>
+    </header>
+    <div class="log__body" id="logBody"></div>
+  </section>
+
+</main>
+
+<script src="paho-mqtt.min.js"></script>
+<script src="script.js" defer></script>
+</body>
+</html>
