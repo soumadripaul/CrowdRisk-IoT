@@ -7,18 +7,17 @@
 #include <esp_wifi.h>
 #include <Wire.h>
 #include <LiquidCrystal_I2C.h>
-#include <PubSubClient.h>
 #define LCD_ADDRESS 0x27
 LiquidCrystal_I2C lcd(LCD_ADDRESS, 16, 2);
 
 // ===========================
-//  PIN DEFINITIONS (per your table)
+//  PIN DEFINITIONS 
 // ===========================
 #define ENTRY_IR     32
 #define EXIT_IR      33
 #define GREEN_LED    27
 #define YELLOW_LED   26
-#define RED_LED      14
+#define BLUE_LED      14
 #define BUZZER       25
 
 // ===========================
@@ -33,32 +32,12 @@ const unsigned long IR_COOLDOWN = 600;
 enum RiskLevel { Risk_SAFE, Risk_MODERATE, Risk_DANGER };
 
 // ===========================
-//  MQTT / WiFi DASHBOARD CONFIG
+//  ESP-NOW CONFIG
 // ===========================
 #define ESPNOW_CHANNEL 1
 
-const char* WIFI_SSID       = "MOTO";
-const char* WIFI_PASSWORD   = "soumadri007";
-
-const char* MQTT_BROKER     = "10.229.125.132";
-const uint16_t MQTT_PORT    = 1883;
-const char* MQTT_USER       = "";
-const char* MQTT_PASSWORD   = "";
-const char* MQTT_CLIENT_ID  = "GroundNode_CrowdRisk";
-const char* MQTT_TOPIC_DATA   = "crowd/risk/data";
-const char* MQTT_TOPIC_STATUS = "crowd/risk/status";
-
-const unsigned long MQTT_PUBLISH_INTERVAL = 2000UL;
-const unsigned long MQTT_RECONNECT_INTERVAL = 5000UL;
-
-WiFiClient espClient;
-PubSubClient mqttClient(espClient);
-unsigned long lastMQTTPublish = 0;
-unsigned long lastMQTTReconnectAttempt = 0;
-bool wifiDashboardEnabled = false;
-
 // ===========================
-//  PACKET FROM CEILING NODE (must match)
+//  PACKET FROM CEILING NODE 
 // ===========================
 typedef struct {
   bool    nodeAlive;
@@ -129,9 +108,6 @@ String riskToString(RiskLevel level);
 void monitorNode();
 void resetRiskState();
 void printStatus();
-void connectWiFiAndSyncChannel();
-void reconnectMQTT();
-void publishToMQTT();
 
 // ===========================
 //  ESP‑NOW RECEIVE CALLBACK
@@ -170,11 +146,11 @@ void setup() {
 
   pinMode(GREEN_LED,  OUTPUT);
   pinMode(YELLOW_LED, OUTPUT);
-  pinMode(RED_LED,    OUTPUT);
+  pinMode(BLUE_LED,   OUTPUT);
   pinMode(BUZZER,     OUTPUT);
   digitalWrite(GREEN_LED,  LOW);
   digitalWrite(YELLOW_LED, LOW);
-  digitalWrite(RED_LED,    LOW);
+  digitalWrite(BLUE_LED,   LOW);
   digitalWrite(BUZZER,     LOW);
 
   ledcAttach(BUZZER, 2000, 8);
@@ -189,13 +165,6 @@ void setup() {
   }
 
   esp_now_register_recv_cb(onDataReceive);
-
-  uint8_t ceilingMAC[] = { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
-
-  // ---- WiFi + MQTT dashboard connection ----
-  connectWiFiAndSyncChannel();
-  mqttClient.setServer(MQTT_BROKER, MQTT_PORT);
-  mqttClient.setBufferSize(512);   // FIX #2: default 256 bytes is too small for the full JSON payload
 
   Serial.println("-----------------------------------");
   Serial.println("GROUND NODE READY");
@@ -218,7 +187,6 @@ void loop() {
   updateOutputs();
   updateLCD();
   printStatus();
-  publishToMQTT();
 }
 
 // ===========================
@@ -321,12 +289,12 @@ void calculateRisk() {
 void updateLEDs() {
   digitalWrite(GREEN_LED,  LOW);
   digitalWrite(YELLOW_LED, LOW);
-  digitalWrite(RED_LED,    LOW);
+  digitalWrite(BLUE_LED,   LOW);
 
   switch (currentRisk) {
     case Risk_SAFE:     digitalWrite(GREEN_LED,  HIGH); break;
     case Risk_MODERATE: digitalWrite(YELLOW_LED, HIGH); break;
-    case Risk_DANGER:   digitalWrite(RED_LED,    HIGH); break;
+    case Risk_DANGER:   digitalWrite(BLUE_LED,   HIGH); break;
   }
 }
 
@@ -504,93 +472,4 @@ void printStatus() {
   Serial.print("Ceiling Node : "); Serial.println(ceilingOnline ? "ONLINE" : "OFFLINE");
   Serial.print("Packet Number: "); Serial.println(ceilingData.packetNumber);
   Serial.print("OVERALL RISK : "); Serial.println(riskToString(currentRisk));
-  Serial.print("MQTT Dashboard: "); Serial.println(mqttClient.connected() ? "CONNECTED" : "DISCONNECTED");
-}
-
-// ===========================
-//  WIFI + MQTT DASHBOARD
-// ===========================
-void connectWiFiAndSyncChannel() {
-  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-  Serial.print("Connecting to WiFi for MQTT dashboard");
-  unsigned long start = millis();
-  while (WiFi.status() != WL_CONNECTED && millis() - start < 10000) {
-    delay(300);
-    Serial.print(".");
-  }
-  Serial.println();
-
-  if (WiFi.status() == WL_CONNECTED) {
-    wifiDashboardEnabled = true;
-    Serial.print("WiFi connected, IP: ");
-    Serial.println(WiFi.localIP());
-    esp_wifi_set_channel(WiFi.channel(), WIFI_SECOND_CHAN_NONE);
-    Serial.print("ESP-NOW channel synced to: ");
-    Serial.println(WiFi.channel());
-  } else {
-    wifiDashboardEnabled = false;
-    Serial.println("WiFi connect failed - MQTT dashboard disabled, ESP-NOW stays on its fixed channel");
-  }
-}
-
-// FIX #1: PubSubClient's connect(id, user, pass) sets the "username
-// present" flag in the MQTT CONNECT packet even when user/pass are
-// empty strings, which some brokers reject. Use the plain connect(id)
-// overload whenever no credentials are configured, so the CONNECT
-// packet carries no username/password fields at all.
-void reconnectMQTT() {
-  if (!wifiDashboardEnabled || WiFi.status() != WL_CONNECTED) return;
-
-  unsigned long now = millis();
-  if (now - lastMQTTReconnectAttempt < MQTT_RECONNECT_INTERVAL) return;
-  lastMQTTReconnectAttempt = now;
-
-  Serial.print("Connecting to MQTT broker...");
-
-  bool connected;
-  if (strlen(MQTT_USER) > 0) {
-    connected = mqttClient.connect(MQTT_CLIENT_ID, MQTT_USER, MQTT_PASSWORD);
-  } else {
-    connected = mqttClient.connect(MQTT_CLIENT_ID);   // anonymous connect
-  }
-
-  if (connected) {
-    Serial.println("connected");
-    mqttClient.publish(MQTT_TOPIC_STATUS, "online", true);
-  } else {
-    Serial.print("failed, rc=");
-    Serial.println(mqttClient.state());
-  }
-}
-
-void publishToMQTT() {
-  if (!wifiDashboardEnabled || WiFi.status() != WL_CONNECTED) return;
-
-  if (!mqttClient.connected()) {
-    reconnectMQTT();
-    if (!mqttClient.connected()) return;
-  }
-  mqttClient.loop();
-
-  unsigned long now = millis();
-  if (now - lastMQTTPublish < MQTT_PUBLISH_INTERVAL) return;
-  lastMQTTPublish = now;
-
-  char payload[420];
-  snprintf(payload, sizeof(payload),
-    "{"
-      "\"people\":%d,\"entry\":%lu,\"exit\":%lu,\"occupiedRisk\":\"%s\","
-      "\"densityPercent\":%.1f,\"zonesOccupied\":%d,\"densityRisk\":\"%s\","
-      "\"temperature\":%.1f,\"humidity\":%.1f,\"envRisk\":\"%s\","
-      "\"noisePercent\":%.1f,\"noiseDb\":%.1f,\"noiseRisk\":\"%s\","
-      "\"ceilingOnline\":%s,\"packetNumber\":%lu,\"overallRisk\":\"%s\""
-    "}",
-    peopleCount, (unsigned long)entryCount, (unsigned long)exitCount, riskToString(countRisk).c_str(),
-    ceilingData.densityPercent, (int)ceilingData.occupiedZones, riskToString(densityRiskG).c_str(),
-    ceilingData.temperature, ceilingData.humidity, riskToString(environmentRiskG).c_str(),
-    ceilingData.noiseNormalized, ceilingData.noiseLevel, riskToString(noiseRiskG).c_str(),
-    ceilingOnline ? "true" : "false", (unsigned long)ceilingData.packetNumber, riskToString(currentRisk).c_str()
-  );
-
-  mqttClient.publish(MQTT_TOPIC_DATA, payload);
 }

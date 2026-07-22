@@ -1,4 +1,4 @@
-                                                                                                     # Crowd Risk Prediction & Safety Monitoring System
+ # Crowd Risk Prediction & Safety Monitoring System
 
 ## An Edge-Enabled IoT Framework for Real-Time Crowd Risk Prediction Using Multi-Sensor Data Fusion
 

@@ -12,31 +12,30 @@
 #include <driver/i2s.h>
 
 // ===========================
-//  MAC address of Ground Node – CHANGE THIS!
+//  MAC address of Ground Node 
 // ===========================
 uint8_t groundNodeMAC[] = { 0x78, 0x42, 0x1C, 0x19, 0xD0, 0x88 };
 
 // ===========================
 //  RISK THRESHOLDS (multi-sensor crowd risk algorithm)
-//  Fix #7: every threshold raised by +5 points from the original spec.
 // ===========================
-#define NOISE_SAFE_THRESHOLD   40.0   // % normalized RMS  -> Safe        (was 35.0)
-#define NOISE_DANGER_THRESHOLD 70.0   // % normalized RMS  -> Danger      (was 65.0)
-#define DENSITY_SAFE           45.0   // %                 -> Safe        (was 40.0)
-#define DENSITY_DANGER         75.0   // %                 -> Danger      (was 70.0)
-#define TEMP_SAFE_MAX          37.0   // °C               -> Safe boundary (was 32.0)
-#define TEMP_DANGER_MIN        40.0   // °C               -> Danger boundary (was 35.0)
-#define HUM_SAFE_MAX           80.0   // %RH              -> Safe boundary (was 70.0)
-#define HUM_DANGER_MIN         90.0   // %RH              -> Danger boundary (was 80.0)
+#define NOISE_SAFE_THRESHOLD   40.0   // % normalized RMS  -> Safe        (35.0)
+#define NOISE_DANGER_THRESHOLD 70.0   // % normalized RMS  -> Danger      (65.0)
+#define DENSITY_SAFE           45.0   // %                 -> Safe        (40.0)
+#define DENSITY_DANGER         75.0   // %                 -> Danger      (70.0)
+#define TEMP_SAFE_MAX          37.0   // °C               -> Safe boundary (32.0)
+#define TEMP_DANGER_MIN        40.0   // °C               -> Danger boundary (35.0)
+#define HUM_SAFE_MAX           80.0   // %RH              -> Safe boundary (70.0)
+#define HUM_DANGER_MIN         90.0   // %RH              -> Danger boundary (80.0)
 #define PERSON_DISTANCE_CM     100.0  // cm                -> zone considered occupied
 #define NOISE_FLOOR_DB         40.0   // dB SPL mapped to 0%
 #define NOISE_CEIL_DB          90.0   // dB SPL mapped to 100%
 
 enum RiskLevel { RISK_SAFE = 0, RISK_MODERATE = 1, RISK_DANGER = 2 };
 
-// ===========================
-//  Packet structure (must match Ground Node)
-// ===========================
+// ==================
+//  Packet structure
+// ==================
 typedef struct {
   bool    nodeAlive;
   float   temperature;
@@ -93,9 +92,9 @@ uint8_t evaluateNoiseRisk(float normalizedPct);
 uint8_t evaluateDensityRisk(float densityPct);
 void evaluateRisks();
 
-// ===========================
-//  ESP‑NOW send callback
-// ===========================
+// =======================
+//  ESP‑NOW send callback 
+// =======================
 void onDataSent(const wifi_tx_info_t *info, esp_now_send_status_t status) {
   Serial.print("Send status: ");
   Serial.println(status == ESP_NOW_SEND_SUCCESS ? "SUCCESS" : "FAILED");
@@ -108,9 +107,9 @@ void haltWithError(const char *message) {
   }
 }
 
-// ===========================
+// =========
 //  SETUP
-// ===========================
+// =========
 void setup() {
   Serial.begin(115200);
 
@@ -161,7 +160,7 @@ void setup() {
     haltWithError("ESP-NOW init failed");
   }
 
-  esp_now_register_send_cb(onDataSent);
+  esp_now_register_send_cb(onDataSent);   // now correct for this core version
 
   esp_now_peer_info_t peerInfo = {};
   memcpy(peerInfo.peer_addr, groundNodeMAC, 6);
@@ -207,7 +206,7 @@ void loop() {
 }
 
 // -----------------------------
-//  Sensor reading functions (same as before)
+//  Sensor reading functions
 // -----------------------------
 void readBME280() {
   data.temperature = bme.readTemperature();
@@ -320,7 +319,6 @@ void sendData() {
 
 // ===========================
 //  PER-SENSOR RISK EVALUATION
-//  (matches algorithm Steps 2–4, thresholds raised +5 per fix #7)
 // ===========================
 uint8_t evaluateTemperatureRisk(float tempC) {
   if (tempC <= TEMP_SAFE_MAX)   return RISK_SAFE;
